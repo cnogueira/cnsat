@@ -1,0 +1,6 @@
+[package]
+name = "cnsat"
+version = "0.1.0"
+authors = ["cnogueira"]
+
+[dependencies]
