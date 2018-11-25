@@ -5,7 +5,6 @@ use std::io::BufReader;
 use std::io::Read;
 use dimacs::Instance;
 use model::Clause;
-use model::Literal;
 
 pub fn parse_dimacs_file(filename: &str) -> Result<ClauseSet, String> {
     let content = read_file(filename)?;

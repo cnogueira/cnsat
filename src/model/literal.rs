@@ -10,6 +10,10 @@ impl Literal {
             dimacs::Sign::Neg => Literal(-(lit.var().to_u64() as i32)),
         }
     }
+
+    pub fn complementary(&self) -> Literal {
+        Literal(-1 * self.0)
+    }
 }
 
 impl fmt::Debug for Literal {

@@ -5,9 +5,11 @@ use parser::parse_dimacs_file;
 use std::env;
 use model::clause_vec_to_string;
 use model::ClauseVec;
+use solver::Solver;
 
 mod solver;
 mod model;
+mod decider;
 mod parser;
 
 fn main() {
@@ -25,8 +27,13 @@ fn main() {
         return;
     }
 
-    let clause_set = parse_result.unwrap();
-    let clause_vec: ClauseVec = clause_set.into_iter().collect();
+    let mut solver = Solver::new();
 
-    println!("clause_set: {}", clause_vec_to_string(&clause_vec));
+    parse_result.unwrap().into_iter().for_each(|clause| {
+        solver.add_clause(clause);
+    });
+
+    solver.solve();
+
+    println!("DONE");
 }

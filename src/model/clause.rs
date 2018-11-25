@@ -15,6 +15,10 @@ impl Clause {
 
         Clause { lits: clause_lits }
     }
+
+    pub fn lits(&self) -> &[Literal] {
+        &self.lits
+    }
 }
 
 impl fmt::Display for Clause {
