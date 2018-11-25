@@ -2,21 +2,30 @@ use model::Clause;
 use model::LiteralSet;
 use model::ClauseVec;
 use model::Decision;
-use solver::Constant::SAT;
-use solver::Constant::UNSAT;
-use solver::Constant::CONFLICT;
+use solver::Constant::Sat;
+use solver::Constant::Unsat;
+use solver::Constant::Conflict;
+use solver::Constant::NoConflict;
 use model::Literal;
 use decider::VSIDSDecider;
+use model::ClauseId;
+use fnv::FnvHashMap;
+use fnv::FnvHashSet;
 
 #[derive(Debug, PartialEq)]
 enum Constant {
-    SAT,
-    UNSAT,
-    CONFLICT,
+    Sat,
+    Unsat,
+    Conflict,
+    NoConflict,
 }
 
 pub struct Solver {
     clauses: ClauseVec,
+    lit_to_clause: FnvHashMap<Literal, Vec<ClauseId>>,
+    watched_lit_to_clause: FnvHashMap<Literal, Vec<ClauseId>>,
+    satisfied_clauses: FnvHashSet<ClauseId>,
+    assigned_lits: LiteralSet,
     decision_stack: Vec<Decision>,
     decider: VSIDSDecider,
 }
@@ -24,21 +33,46 @@ pub struct Solver {
 impl Solver {
     pub fn new() -> Self {
         Solver {
-            clauses: Vec::new(),
+            clauses: ClauseVec::new(),
+            lit_to_clause: FnvHashMap::default(),
+            watched_lit_to_clause: FnvHashMap::default(),
+            satisfied_clauses: FnvHashSet::default(),
+            assigned_lits: LiteralSet::default(),
             decision_stack: Vec::new(),
             decider: VSIDSDecider::new()
         }
     }
 
     pub fn add_clause(&mut self, clause: Clause) {
+        let clause_id = self.clauses.len();
+
+
+        clause.lits().iter().cloned().for_each(|lit| {
+            self.lit_to_clause.entry(lit)
+                .and_modify(|clauses| clauses.push(clause_id))
+                .or_insert_with(|| vec![clause_id]);
+        });
+
+        self.add_watched_lit(clause_id, clause.first_watched_lit());
+        if let Some(lit) = clause.second_watched_lit() {
+            self.add_watched_lit(clause_id, lit);
+        }
+
         self.decider.add_clause(&clause);
         self.clauses.push(clause);
     }
 
+    #[inline]
+    fn add_watched_lit(&mut self, clause_id: ClauseId, lit: Literal) {
+        self.watched_lit_to_clause.entry(lit)
+            .and_modify(|clauses| clauses.push(clause_id))
+            .or_insert_with(|| vec![clause_id]);
+    }
+
     pub fn solve(&mut self) -> Option<LiteralSet> {
         match self.dpll() {
-            SAT => Some(self.decision_stack.iter().map(|d| d.lit()).collect()),
-            UNSAT => None,
+            Sat => Some(self.decision_stack.iter().map(|d| d.lit()).collect()),
+            Unsat => None,
             other => panic!("DPLL must return either SAT or UNSAT. got: {:?}", other),
         }
     }
@@ -48,14 +82,14 @@ impl Solver {
             let lit = self.decide_next_literal();
 
             if lit.is_none() {
-                return SAT;
+                return Sat;
             }
 
-            if self.deduce(lit.unwrap()) == CONFLICT {
+            if self.deduce(lit.unwrap()) == Conflict {
                 let bt_lvl = self.analyze_conflicts();
 
                 if bt_lvl == 0 {
-                    return UNSAT;
+                    return Unsat;
                 }
 
                 self.backtrack_to(bt_lvl);
@@ -67,8 +101,47 @@ impl Solver {
         self.decider.next_literal()
     }
 
-    fn deduce(&mut self, literal: Literal) -> Constant {
-        unimplemented!()
+    fn deduce(&mut self, lit: Literal) -> Constant {
+        self.assigned_lits.insert(lit);
+        let mut decision= Decision::from(lit, self.current_decision_level() + 1);
+        let mut propagated_lits = LiteralSet::default();
+
+        // Satisfy clauses
+        if let Some(clause_ids) = self.lit_to_clause.get(&lit).map(|c| c.as_slice()) {
+            for &clause_id in clause_ids {
+                if !self.satisfied_clauses.contains(&clause_id) {
+                    decision.add_satisfied_clause(clause_id);
+                    self.satisfied_clauses.insert(clause_id);
+                }
+            }
+        }
+
+        // Strengthen clauses
+        let complementary = lit.complementary();
+        if let Some(clause_ids) = self.watched_lit_to_clause.get(&complementary).map(|c| c.as_slice()) {
+            for &clause_id in clause_ids {
+                let clause_ref: &mut Clause = &mut self.clauses[clause_id];
+                clause_ref.strengthen(complementary, &self.assigned_lits);
+
+                if clause_ref.is_unary() {
+                    propagated_lits.insert(clause_ref.first_watched_lit());
+                }
+            }
+        }
+
+        // TODO process propagated lits
+
+        self.decision_stack.push(decision);
+
+        NoConflict
+    }
+
+    #[inline]
+    fn current_decision_level(&self) -> u32 {
+        match self.decision_stack.last() {
+            Some(decision) => decision.lvl(),
+            None => 0,
+        }
     }
 
     fn analyze_conflicts(&mut self) -> u32 {

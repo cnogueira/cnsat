@@ -6,6 +6,7 @@ use fnv::FnvHashSet;
 
 pub use self::literal::Literal;
 pub use self::clause::Clause;
+pub use self::clause::ClauseId;
 pub use self::decision::Decision;
 
 pub type LiteralSet = FnvHashSet<Literal>;
