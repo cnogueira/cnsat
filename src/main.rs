@@ -4,12 +4,12 @@ extern crate dimacs;
 use parser::parse_dimacs_file;
 use std::env;
 use model::clause_vec_to_string;
-use model::ClauseVec;
 use solver::Solver;
 
 mod solver;
 mod model;
 mod decider;
+mod conflict_analyzer;
 mod parser;
 
 fn main() {
@@ -33,7 +33,10 @@ fn main() {
         solver.add_clause(clause);
     });
 
-    solver.solve();
+    let solution = solver.solve();
 
-    println!("DONE");
+    match solution {
+        Some(model) => println!("SAT\nmodel: {:?}", model),
+        None => println!("UNSAT"),
+    }
 }

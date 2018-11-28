@@ -13,6 +13,7 @@ pub struct VSIDSDecider {
     lit_count: FnvHashMap<Literal, u64>,
     count_lit: BTreeMap<u64, LiteralSet>,
     unassigned_lits: LiteralSet,
+    next_decision: Option<Literal>,
     age: u64,
 }
 
@@ -22,6 +23,7 @@ impl VSIDSDecider {
             lit_count: FnvHashMap::default(),
             count_lit: BTreeMap::new(),
             unassigned_lits: LiteralSet::default(),
+            next_decision: None,
             age: 0,
         }
     }
@@ -79,7 +81,24 @@ impl VSIDSDecider {
 
         self.age += 1;
 
-        let chosen_literal = self.count_lit.values().rev()
+        let chosen_literal = self.next_decision
+            .or_else(|| self.compute_best_decision());
+
+        // Remove any forced next_decision
+        self.next_decision = None;
+
+        match chosen_literal {
+            Some(literal) => {
+                self.assign_lit(&literal);
+
+                Some(literal)
+            },
+            None => None,
+        }
+    }
+
+    fn compute_best_decision(&self) -> Option<Literal> {
+        self.count_lit.values().rev()
             .filter(|&lits| self.contains_unassigned_literal(lits))
             .map(|lits| {
                 lits.iter().cloned()
@@ -87,17 +106,25 @@ impl VSIDSDecider {
                     .collect::<Vec<_>>()
             })
             // TODO choose candidate at random! Disabled to allow proper performance comparisons
-            .find_map(|candidates| candidates.last().cloned());
+            .find_map(|candidates| candidates.last().cloned())
+    }
 
-        match chosen_literal {
-            Some(literal) => {
-                self.unassigned_lits.remove(&literal);
-                self.unassigned_lits.remove(&literal.complementary());
+    #[inline]
+    pub fn assign_lit(&mut self, lit: &Literal) {
+        self.unassigned_lits.remove(lit);
+        self.unassigned_lits.remove(&lit.complementary());
+    }
 
-                Some(literal)
-            },
-            None => None,
-        }
+    #[inline]
+    pub fn un_assign_lit(&mut self, lit: Literal) {
+        self.unassigned_lits.insert(lit);
+        self.unassigned_lits.insert(lit.complementary());
+    }
+
+    pub fn add_asserting_clause(&mut self, clause: &Clause) {
+        assert!(clause.is_unary());
+
+        self.next_decision = Some(clause.first_watched_lit());
     }
 
     fn age_factor(&self) -> u64 {

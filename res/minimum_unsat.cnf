@@ -1,0 +1,12 @@
+c
+c Minimum unsat contains a minimal unsatisfiable formula
+c
+p cnf 3 8
+-1 -2 -3 0
+-1 -2 3 0
+-1 2 -3 0
+-1 2 3 0
+1 -2 -3 0
+1 -2 3 0
+1 2 -3 0
+1 2 3 0

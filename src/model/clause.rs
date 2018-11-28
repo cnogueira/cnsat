@@ -27,10 +27,21 @@ impl Clause {
         }
     }
 
+    pub fn new_asserting_clause(last_lit: Literal, mut strengthen_lits: LiteralVec) -> Self {
+        strengthen_lits.push(last_lit);
+
+        Clause {
+            lits: strengthen_lits,
+            lit_a: last_lit,
+            lit_b: None,
+        }
+    }
+
     pub fn lits(&self) -> &[Literal] {
         &self.lits
     }
 
+    #[inline]
     pub fn first_watched_lit(&self) -> Literal {
         self.lit_a
     }
@@ -43,7 +54,7 @@ impl Clause {
         self.lit_b.is_none()
     }
 
-    pub fn strengthen(&mut self, lit: Literal, assigned_lits: &LiteralSet) {
+    pub fn strengthen(&mut self, lit: Literal, assigned_lits: &LiteralSet) -> Option<Literal> {
         if self.lit_a == lit {
             self.lit_a = self.lit_b.expect("Cannot strengthen unary clauses");
         } else if self.lit_b.is_none() || self.lit_b.unwrap() != lit {
@@ -51,14 +62,21 @@ impl Clause {
         }
 
         self.lit_b = self.find_new_second(assigned_lits);
+
+        self.lit_b
+    }
+
+    pub fn un_strengthen(&mut self, assigned_lits: &LiteralSet) -> Option<Literal> {
+        self.lit_b = self.find_new_second(assigned_lits);
+
+        self.lit_b
     }
 
     #[inline]
     fn find_new_second(&self, assigned_lits: &LiteralSet) -> Option<Literal> {
         self.lits.iter().cloned()
             .filter(|&lit| lit != self.lit_a)
-            .map(|lit| lit.complementary())
-            .find(|lit| !assigned_lits.contains(lit))
+            .find(|lit| !assigned_lits.contains(&lit.complementary()))
     }
 }
 
