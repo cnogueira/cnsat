@@ -27,9 +27,7 @@ impl Clause {
         }
     }
 
-    pub fn new_asserting_clause(last_lit: Literal, mut strengthen_lits: LiteralVec) -> Self {
-        strengthen_lits.push(last_lit);
-
+    pub fn new_asserting_clause(last_lit: Literal, strengthen_lits: LiteralVec) -> Self {
         Clause {
             lits: strengthen_lits,
             lit_a: last_lit,
@@ -70,6 +68,10 @@ impl Clause {
         self.lit_b = self.find_new_second(assigned_lits);
 
         self.lit_b
+    }
+
+    pub fn can_be_strengthen_by(&self, lit: Literal) -> bool {
+        self.lits.contains(&lit.complementary())
     }
 
     #[inline]

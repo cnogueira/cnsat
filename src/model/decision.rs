@@ -10,6 +10,7 @@ pub struct Decision {
     level: u32,
     satisfied_clauses: FnvHashSet<ClauseId>,
     propagated_lits: FnvHashMap<Literal, ClauseId>,
+    unary_clauses: FnvHashSet<ClauseId>,
     conflict_lit: Option<Literal>,
 }
 
@@ -20,6 +21,7 @@ impl Decision {
             level,
             satisfied_clauses: FnvHashSet::default(),
             propagated_lits: FnvHashMap::default(),
+            unary_clauses: FnvHashSet::default(),
             conflict_lit: None,
         }
     }
@@ -42,11 +44,17 @@ impl Decision {
         self.satisfied_clauses.insert(clause_id);
     }
 
+    pub fn unary_clauses(&self) -> &FnvHashSet<ClauseId> {
+        &self.unary_clauses
+    }
+
+
     pub fn satisfied_clauses(&self) -> &FnvHashSet<ClauseId> {
         &self.satisfied_clauses
     }
 
     pub fn add_propagated_lit(&mut self, lit: Literal, clause_id: ClauseId) -> Constant {
+        self.unary_clauses.insert(clause_id);
         self.propagated_lits.insert(lit, clause_id);
 
         if self.propagated_lits.contains_key(&lit.complementary()) {

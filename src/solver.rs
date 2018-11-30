@@ -43,7 +43,7 @@ impl Solver {
             watched_lit_to_clause: FnvHashMap::default(),
             satisfied_clauses: FnvHashSet::default(),
             assigned_lits: LiteralSet::default(),
-            decision_stack: Vec::new(),
+            decision_stack: vec![Decision::from(Literal::non_existent(), 0)],
             decider: VSIDSDecider::new()
         }
     }
@@ -89,23 +89,23 @@ impl Solver {
 
     fn dpll(&mut self) -> Constant {
         loop {
-            self.print_status();
-
             let lit = self.decide_next_literal();
 
             if lit.is_none() {
                 return Sat;
             }
 
-            let lit = lit.unwrap();
+            let mut lit = lit.unwrap();
             while self.deduce(lit) == Conflict {
-                let (bt_lvl, lit) = self.analyze_conflict();
+                let learnt_clause_id = self.analyze_conflict();
 
-                if bt_lvl == 0 {
+
+                if !self.backtrack(learnt_clause_id) {
                     return Unsat;
                 }
 
-                self.backtrack_to(bt_lvl);
+                lit = self.clauses[learnt_clause_id].first_watched_lit();
+                self.decision_stack.last_mut().unwrap().add_propagated_lit(lit, learnt_clause_id);
             }
         }
     }
@@ -118,6 +118,7 @@ impl Solver {
         }
         println!("- satisfied_clauses: {:?}", self.satisfied_clauses);
         println!("- assigned_lits: {:?}", self.assigned_lits);
+        println!("- watched_lits_per_clause: {}", self.format_watched_lits());
         println!("- watched_lits: {:?}", self.watched_lit_to_clause);
         println!("- unsatisfied clauses:\n{}", clause_vec_to_string(&self.clauses, &self.satisfied_clauses));
 
@@ -131,23 +132,28 @@ impl Solver {
 
         self.decision_stack.push(Decision::from(next_lit, next_lvl));
 
-        self.decider.assign_lit(&next_lit);
-        self.assigned_lits.insert(next_lit);
-
         Some(next_lit)
     }
 
-    fn deduce(&mut self, lit: Literal) -> Constant {
+    fn deduce(&mut self, mut lit: Literal) -> Constant {
+        self.print_status();
+        println!("deducing lit: {}", lit);
+        println!("- lit_to_clause: {:?}", self.lit_to_clause);
+        println!("- watched_lit_to_clause: {:?}", self.watched_lit_to_clause);
+
         let mut decision = self.decision_stack.pop().unwrap();
         let mut propagated_lits = LiteralSet::default();
 
         loop {
+            self.decider.assign_lit(lit);
+            self.assigned_lits.insert(lit);
+
             // Satisfy clauses
             if let Some(clause_ids) = self.lit_to_clause.get(&lit).map(|c| c.as_slice()) {
                 for &clause_id in clause_ids {
-                    if !self.satisfied_clauses.contains(&clause_id) {
+                    if self.satisfied_clauses.insert(clause_id) {
+                        println!("add clause as satisfied: {}", clause_id);
                         decision.add_satisfied_clause(clause_id);
-                        self.satisfied_clauses.insert(clause_id);
                     }
                 }
             }
@@ -157,6 +163,7 @@ impl Solver {
             let complementary = lit.complementary();
             if let Some(clause_ids) = self.watched_lit_to_clause.get(&complementary) {
                 for &clause_id in clause_ids.difference(&self.satisfied_clauses) {
+                    println!("strengthening clause: {}, assigned_lits: {:?}", clause_id, self.assigned_lits);
                     let clause_ref: &mut Clause = &mut self.clauses[clause_id];
 
                     let next_watched_lit = clause_ref.strengthen(complementary, &self.assigned_lits);
@@ -181,19 +188,21 @@ impl Solver {
                 .and_modify(|clause_ids| clause_ids.clear())
                 .or_insert_with(|| FnvHashSet::default());
 
-            self.decider.assign_lit(&lit);
-            self.assigned_lits.insert(lit);
-
             if propagated_lits.is_empty() {
                 break;
             }
 
             // No conflicts yet, prepare next lit to propagate
-            let lit = propagated_lits.iter().next().cloned().unwrap();
+            lit = propagated_lits.iter().next().cloned().unwrap();
             propagated_lits.remove(&lit);
+
+            println!("propagating lit: {}", lit);
         }
 
         self.decision_stack.push(decision);
+
+        self.print_status();
+        println!("finish deducing");
 
         NoConflict
     }
@@ -206,22 +215,36 @@ impl Solver {
         }
     }
 
-    fn analyze_conflict(&mut self) -> (u32, Literal) {
+    fn analyze_conflict(&mut self) -> ClauseId {
 
         let asserting_clause = learn_from_conflict(self.decision_stack.last().unwrap(), &self.clauses);
-        println!("X conflict! learned: {}", asserting_clause);
+        println!("xxxxxxxxxxxxxxxxx CONFLICT xxxxxxxxxxxxxxxxxxxx");
+        match self.decision_stack.last() {
+            Some(decision) => decision.print_status(),
+            None => println!("= No decisions"),
+        }
+        println!("- satisfied_clauses: {:?}", self.satisfied_clauses);
+        println!("- assigned_lits: {:?}", self.assigned_lits);
+        println!("- watched_lits: {:?}", self.watched_lit_to_clause);
+        println!("- watched_lits_per_clause: {}", self.format_watched_lits());
+        println!("- unsatisfied clauses:\n{}", clause_vec_to_string(&self.clauses, &self.satisfied_clauses));
+        let clause_id = self.add_clause(asserting_clause.clone());
+        println!("x learnt_clause: {}: {:?}", clause_id, asserting_clause);
+        println!("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 
-        let lit = asserting_clause.first_watched_lit();
-        let clause_id = self.add_clause(asserting_clause);
         self.learnt_clauses.insert(clause_id);
 
-
-        (self.decision_stack.last().unwrap().lvl() - 1, lit)
+        clause_id
     }
 
-    fn backtrack_to(&mut self, level: u32) {
+    fn backtrack(&mut self, conflict_clause_id: ClauseId) -> bool {
         loop {
             let last_decision = self.decision_stack.pop().unwrap();
+            if last_decision.lit() == Literal::non_existent() {
+                return false;
+            }
+
+            println!("undoing decision {}@{}", last_decision.lit(), last_decision.lvl());
 
             // undo lit assignments
             last_decision.propagated_lits_iter().for_each(|propagated_lit| {
@@ -238,16 +261,35 @@ impl Solver {
             });
 
             // re-sync un strengthen clauses
-            last_decision.implying_clauses_iter().for_each(|implying_clause_id| {
+            println!("assigned_lits: {:?}", self.assigned_lits);
+            last_decision.unary_clauses().iter().for_each(|&implying_clause_id| {
+                println!("un-strengthen clause: {}", implying_clause_id);
+                println!("before: {:?}", self.clauses[implying_clause_id]);
                 self.clauses[implying_clause_id].un_strengthen(&self.assigned_lits);
+                println!("after: {:?}", self.clauses[implying_clause_id]);
 
                 let new_watched_lit = self.clauses[implying_clause_id].second_watched_lit().unwrap();
                 self.add_watched_lit(implying_clause_id, new_watched_lit);
             });
 
-            if self.decision_stack.last().unwrap().lvl() == level {
-                return;
+            println!("watched_lits_per_clause: {}", self.format_watched_lits());
+
+            // If current decision will trigger UP on the learnt clause, stop backtracking.
+            let current_decision_lit = self.decision_stack.last().unwrap().lit();
+            if self.clauses[conflict_clause_id].can_be_strengthen_by(current_decision_lit) {
+                return true;
             }
         }
+    }
+
+    fn format_watched_lits(&self) -> String {
+        let result: FnvHashMap<ClauseId, [Literal; 2]> = self.clauses.iter().enumerate()
+            .filter(|(id, _clause)| !self.satisfied_clauses.contains(id))
+            .map(|(id, clause)| {
+                (id, [clause.first_watched_lit(), clause.second_watched_lit().unwrap_or(Literal::non_existent())])
+            })
+            .collect();
+
+        format!("{:?}", result)
     }
 }

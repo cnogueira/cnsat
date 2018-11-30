@@ -79,17 +79,6 @@ impl VSIDSDecider {
 
         self.age += 1;
 
-        match self.compute_best_decision() {
-            Some(literal) => {
-                self.assign_lit(&literal);
-
-                Some(literal)
-            },
-            None => None,
-        }
-    }
-
-    fn compute_best_decision(&self) -> Option<Literal> {
         self.count_lit.values().rev()
             .filter(|&lits| self.contains_unassigned_literal(lits))
             .map(|lits| {
@@ -102,8 +91,8 @@ impl VSIDSDecider {
     }
 
     #[inline]
-    pub fn assign_lit(&mut self, lit: &Literal) {
-        self.unassigned_lits.remove(lit);
+    pub fn assign_lit(&mut self, lit: Literal) {
+        self.unassigned_lits.remove(&lit);
         self.unassigned_lits.remove(&lit.complementary());
     }
 

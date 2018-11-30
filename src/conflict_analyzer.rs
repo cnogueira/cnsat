@@ -3,9 +3,10 @@ use model::ClauseVec;
 use std::collections::VecDeque;
 use model::Clause;
 use model::LiteralVec;
+use model::LiteralSet;
 
 pub fn learn_from_conflict(decision: &Decision, clause_db: &ClauseVec) -> Clause {
-    let mut terminal_lits = LiteralVec::new();
+    let mut terminal_lits = LiteralSet::default();
     let mut to_explore = VecDeque::with_capacity(decision.propagated_lits_len());
 
     let conflict_lit = decision.get_conflict_lit().expect("Decision must contain a conflict!");
@@ -26,14 +27,21 @@ pub fn learn_from_conflict(decision: &Decision, clause_db: &ClauseVec) -> Clause
                         }
                     });
             },
-            None => terminal_lits.push(lit.complementary()),
+            None => { terminal_lits.insert(lit.complementary()); },
         }
     }
 
-    let last_lit = to_explore.pop_front().unwrap().complementary();
+    let decision_lit = decision.lit().complementary();
+    let last_lit = if terminal_lits.contains(&decision_lit) {
+        decision_lit
+    } else {
+        let last_lit = to_explore.pop_front().unwrap().complementary();
+        terminal_lits.insert(last_lit);
+        last_lit
+    };
 
     // Learnt clause
-    Clause::new_asserting_clause(last_lit, terminal_lits)
+    Clause::new_asserting_clause(last_lit, terminal_lits.iter().cloned().collect())
 }
 
 

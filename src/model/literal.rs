@@ -14,16 +14,28 @@ impl Literal {
     pub fn complementary(&self) -> Literal {
         Literal(-1 * self.0)
     }
+
+    pub fn non_existent() -> Literal {
+        Literal(0)
+    }
 }
 
 impl fmt::Debug for Literal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        if self.0 != 0 {
+            write!(f, "{}", self.0)
+        } else {
+            write!(f, "{}", "-")
+        }
     }
 }
 
 impl fmt::Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        if self.0 != 0 {
+            write!(f, "{}", self.0)
+        } else {
+            write!(f, "{}", "-")
+        }
     }
 }
