@@ -13,6 +13,7 @@ use fnv::FnvHashMap;
 use fnv::FnvHashSet;
 use conflict_analyzer::learn_from_conflict;
 use std::prelude::v1::Vec;
+use model::clause_vec_to_string;
 
 #[derive(Debug, PartialEq)]
 pub enum Constant {
@@ -71,7 +72,11 @@ impl Solver {
     fn add_watched_lit(&mut self, clause_id: ClauseId, lit: Literal) {
         self.watched_lit_to_clause.entry(lit)
             .and_modify(|clauses| { clauses.insert(clause_id); })
-            .or_insert_with(|| FnvHashSet::default());
+            .or_insert_with(|| {
+                let mut set = FnvHashSet::default();
+                set.insert(clause_id);
+                set
+            });
     }
 
     pub fn solve(&mut self) -> Option<LiteralSet> {
@@ -84,14 +89,17 @@ impl Solver {
 
     fn dpll(&mut self) -> Constant {
         loop {
+            self.print_status();
+
             let lit = self.decide_next_literal();
 
             if lit.is_none() {
                 return Sat;
             }
 
-            if self.deduce(lit.unwrap()) == Conflict {
-                let bt_lvl = self.analyze_conflicts();
+            let lit = lit.unwrap();
+            while self.deduce(lit) == Conflict {
+                let (bt_lvl, lit) = self.analyze_conflict();
 
                 if bt_lvl == 0 {
                     return Unsat;
@@ -102,13 +110,35 @@ impl Solver {
         }
     }
 
+    fn print_status(&self) {
+        println!("***************** STATUS ********************");
+        match self.decision_stack.last() {
+            Some(decision) => decision.print_status(),
+            None => println!("= No decisions"),
+        }
+        println!("- satisfied_clauses: {:?}", self.satisfied_clauses);
+        println!("- assigned_lits: {:?}", self.assigned_lits);
+        println!("- watched_lits: {:?}", self.watched_lit_to_clause);
+        println!("- unsatisfied clauses:\n{}", clause_vec_to_string(&self.clauses, &self.satisfied_clauses));
+
+
+        println!("*********************************************");
+    }
+
     fn decide_next_literal(&mut self) -> Option<Literal> {
-        self.decider.next_literal()
+        let next_lit = self.decider.next_literal()?;
+        let next_lvl = self.current_decision_level() + 1;
+
+        self.decision_stack.push(Decision::from(next_lit, next_lvl));
+
+        self.decider.assign_lit(&next_lit);
+        self.assigned_lits.insert(next_lit);
+
+        Some(next_lit)
     }
 
     fn deduce(&mut self, lit: Literal) -> Constant {
-
-        let mut decision= Decision::from(lit, self.current_decision_level() + 1);
+        let mut decision = self.decision_stack.pop().unwrap();
         let mut propagated_lits = LiteralSet::default();
 
         loop {
@@ -151,6 +181,9 @@ impl Solver {
                 .and_modify(|clause_ids| clause_ids.clear())
                 .or_insert_with(|| FnvHashSet::default());
 
+            self.decider.assign_lit(&lit);
+            self.assigned_lits.insert(lit);
+
             if propagated_lits.is_empty() {
                 break;
             }
@@ -159,14 +192,6 @@ impl Solver {
             let lit = propagated_lits.iter().next().cloned().unwrap();
             propagated_lits.remove(&lit);
         }
-
-        self.decider.assign_lit(&lit);
-        self.assigned_lits.insert(lit);
-
-        decision.propagated_lits_iter().for_each(|propagated_lit| {
-            self.decider.assign_lit(&propagated_lit);
-            self.assigned_lits.insert(propagated_lit);
-        });
 
         self.decision_stack.push(decision);
 
@@ -181,14 +206,17 @@ impl Solver {
         }
     }
 
-    fn analyze_conflicts(&mut self) -> u32 {
-        let asserting_clause = learn_from_conflict(self.decision_stack.last().unwrap(), &self.clauses);
+    fn analyze_conflict(&mut self) -> (u32, Literal) {
 
-        self.decider.add_asserting_clause(&asserting_clause);
+        let asserting_clause = learn_from_conflict(self.decision_stack.last().unwrap(), &self.clauses);
+        println!("X conflict! learned: {}", asserting_clause);
+
+        let lit = asserting_clause.first_watched_lit();
         let clause_id = self.add_clause(asserting_clause);
         self.learnt_clauses.insert(clause_id);
 
-        self.decision_stack.last().unwrap().lvl() - 1
+
+        (self.decision_stack.last().unwrap().lvl() - 1, lit)
     }
 
     fn backtrack_to(&mut self, level: u32) {

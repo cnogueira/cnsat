@@ -13,7 +13,6 @@ pub struct VSIDSDecider {
     lit_count: FnvHashMap<Literal, u64>,
     count_lit: BTreeMap<u64, LiteralSet>,
     unassigned_lits: LiteralSet,
-    next_decision: Option<Literal>,
     age: u64,
 }
 
@@ -23,7 +22,6 @@ impl VSIDSDecider {
             lit_count: FnvHashMap::default(),
             count_lit: BTreeMap::new(),
             unassigned_lits: LiteralSet::default(),
-            next_decision: None,
             age: 0,
         }
     }
@@ -81,13 +79,7 @@ impl VSIDSDecider {
 
         self.age += 1;
 
-        let chosen_literal = self.next_decision
-            .or_else(|| self.compute_best_decision());
-
-        // Remove any forced next_decision
-        self.next_decision = None;
-
-        match chosen_literal {
+        match self.compute_best_decision() {
             Some(literal) => {
                 self.assign_lit(&literal);
 
@@ -119,12 +111,6 @@ impl VSIDSDecider {
     pub fn un_assign_lit(&mut self, lit: Literal) {
         self.unassigned_lits.insert(lit);
         self.unassigned_lits.insert(lit.complementary());
-    }
-
-    pub fn add_asserting_clause(&mut self, clause: &Clause) {
-        assert!(clause.is_unary());
-
-        self.next_decision = Some(clause.first_watched_lit());
     }
 
     fn age_factor(&self) -> u64 {

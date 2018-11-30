@@ -24,6 +24,12 @@ impl Decision {
         }
     }
 
+    pub fn print_status(&self) {
+        println!("= decision: {}@{}", self.lit(), self.lvl());
+        println!("= satisfied_clauses: {:?}", self.satisfied_clauses);
+        println!("= propagated_lits: {:?}", self.propagated_lits);
+    }
+
     pub fn lit(&self) -> Literal {
         self.literal
     }
