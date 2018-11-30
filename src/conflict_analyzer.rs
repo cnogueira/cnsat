@@ -2,7 +2,6 @@ use model::Decision;
 use model::ClauseVec;
 use std::collections::VecDeque;
 use model::Clause;
-use model::LiteralVec;
 use model::LiteralSet;
 
 pub fn learn_from_conflict(decision: &Decision, clause_db: &ClauseVec) -> Clause {

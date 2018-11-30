@@ -3,7 +3,7 @@ extern crate dimacs;
 
 use parser::parse_dimacs_file;
 use std::env;
-use model::clause_vec_to_string;
+//use model::clause_vec_to_string;
 use solver::Solver;
 
 mod solver;

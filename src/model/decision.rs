@@ -70,10 +70,6 @@ impl Decision {
         self.propagated_lits.get(&lit).cloned()
     }
 
-    pub fn implying_clauses_iter(&self) -> impl Iterator<Item=ClauseId> + '_ {
-        self.propagated_lits.iter().map(|a| *a.1)
-    }
-
     #[inline]
     pub fn get_conflict_lit(&self) -> Option<Literal> {
         self.conflict_lit
